@@ -1,0 +1,6 @@
+Task,Owner,Status,Deadline
+Authentication,Backend,Incomplete,September 10 2026
+Frontend,Frontend,Complete,September 5 2026
+Database Setup,Backend,In Progress,September 8 2026
+Testing,QA,Pending,September 15 2026
+Deployment,DevOps,Pending,September 20 2026

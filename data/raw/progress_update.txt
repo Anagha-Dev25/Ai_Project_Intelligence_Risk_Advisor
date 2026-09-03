@@ -1,0 +1,9 @@
+Sprint 2 Progress Update
+
+Frontend development is 90% complete.
+Backend development is 60% complete.
+
+Authentication implementation is currently incomplete.
+
+The backend team needs to complete authentication
+before integration testing can begin.
