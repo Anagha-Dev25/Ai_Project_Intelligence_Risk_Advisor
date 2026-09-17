@@ -1,6 +1,7 @@
-Task,Owner,Status,Deadline
-Authentication,Backend,Incomplete,September 10 2026
-Frontend,Frontend,Complete,September 5 2026
-Database Setup,Backend,In Progress,September 8 2026
-Testing,QA,Pending,September 15 2026
-Deployment,DevOps,Pending,September 20 2026
+Task,Owner,Status,Deadline,Dependency
+Cloud architecture design,Ananya,Complete,20 September 2026,None
+Product catalog migration,Rahul,In Progress,05 October 2026,Cloud architecture
+Authentication module,Meera,In Progress,15 October 2026,None
+Payment gateway integration,Arjun,Blocked,20 October 2026,Payment provider credentials
+CI/CD pipeline,Karthik,In Progress,25 October 2026,Cloud architecture
+,,,,

@@ -1,13 +1,11 @@
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
-
 from app.rag.langchain_embeddings import SentenceTransformerEmbeddings
 
 
 class LangChainRAG:
 
     def __init__(self, persist_directory="vector_store/chroma_db"):
-
         self.embeddings = SentenceTransformerEmbeddings()
 
         self.vectorstore = Chroma(
@@ -41,18 +39,35 @@ class LangChainRAG:
 
     def search(self, query, top_k=3, source=None):
 
-        search_kwargs = {
-            "k": top_k
-        }
+        # If a specific source is provided, search each source separately.
+        # This avoids Chroma errors with list-valued filters.
+        if isinstance(source, list):
 
-        # Search only within the currently uploaded document
-        if source:
-            search_kwargs["filter"] = {
-                "source": source
-            }
+            all_results = []
 
-        retriever = self.vectorstore.as_retriever(
-            search_kwargs=search_kwargs
+            for source_name in source:
+
+                results = self.vectorstore.similarity_search(
+                    query,
+                    k=top_k,
+                    filter={"source": source_name}
+                )
+
+                all_results.extend(results)
+
+            return all_results[:top_k]
+
+        # Search a single source
+        if isinstance(source, str):
+
+            return self.vectorstore.similarity_search(
+                query,
+                k=top_k,
+                filter={"source": source}
+            )
+
+        # Search entire project knowledge base
+        return self.vectorstore.similarity_search(
+            query,
+            k=top_k
         )
-
-        return retriever.invoke(query)
