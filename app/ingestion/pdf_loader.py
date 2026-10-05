@@ -1,25 +1,38 @@
 from pypdf import PdfReader
+import re
 
 
-def load_pdf(file_path):
+def load_pdf(file_path: str) -> str:
     """
-    Extract text from a PDF file.
+    Extract and clean text from a PDF file.
 
     Args:
         file_path (str): Path to the PDF file.
 
     Returns:
-        str: Extracted text from the PDF.
+        str: Extracted and normalized text from all readable pages.
     """
-
     reader = PdfReader(file_path)
 
-    text = ""
+    if reader.is_encrypted:
+        try:
+            reader.decrypt("")
+        except Exception as e:
+            raise ValueError(f"PDF is encrypted and cannot be opened: {e}")
 
-    for page in reader.pages:
-        page_text = page.extract_text()
+    extracted_pages = []
+
+    for i, page in enumerate(reader.pages):
+        page_text = page.extract_text() or ""
+        
+        # Normalize whitespace while preserving line structure
+        page_text = re.sub(r"[ \t]+", " ", page_text)
+        page_text = re.sub(r"\n{3,}", "\n\n", page_text).strip()
 
         if page_text:
-            text += page_text + "\n"
+            if len(reader.pages) > 1:
+                extracted_pages.append(f"--- [Page {i + 1}] ---\n{page_text}")
+            else:
+                extracted_pages.append(page_text)
 
-    return text
+    return "\n\n".join(extracted_pages)

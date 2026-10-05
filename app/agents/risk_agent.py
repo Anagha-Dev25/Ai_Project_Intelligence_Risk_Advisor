@@ -1,21 +1,39 @@
+from typing import Dict, Any, Union, List
 from langchain_ollama import ChatOllama
 from app.rag.langchain_rag import LangChainRAG
-import re
+from app.config import DEFAULT_LLM_MODEL, LLM_TEMPERATURE, LLM_KEEP_ALIVE
+
 
 class RiskAgent:
+    """
+    Enterprise AI Agent for detecting project risks, delivery threats,
+    schedule vulnerabilities, and forecasting project delivery health.
+    """
+
     def __init__(self):
         self.rag = LangChainRAG()
-
         self.llm = ChatOllama(
-            model="qwen2.5:3b",
-            temperature=0,
-            num_predict=250,
-             keep_alive="10m"
-
+            model=DEFAULT_LLM_MODEL,
+            temperature=LLM_TEMPERATURE,
+            num_predict=450,
+            keep_alive=LLM_KEEP_ALIVE
         )
 
-    def analyze_risks(self, source, top_k=3):
+    def analyze_risks(
+        self,
+        source: Union[str, List[str]],
+        top_k: int = 5
+    ) -> Dict[str, Any]:
+        """
+        Analyze project delivery risks based strictly on retrieved evidence.
 
+        Args:
+            source: Document source name or list of sources.
+            top_k: Number of evidence chunks to retrieve.
+
+        Returns:
+            Dict containing 'source', 'analysis', and 'evidence'.
+        """
         query = (
             "Find all information related to project risks, "
             "delays, unresolved issues, dependencies, blockers, "
@@ -29,86 +47,70 @@ class RiskAgent:
             source=source
         )
 
-        evidence = [
-            document.page_content
-            for document in results
-        ]
+        evidence = [doc.page_content for doc in results]
+        unique_evidence = list(dict.fromkeys(evidence))
 
-        # Remove duplicate evidence
-        risk_evidence = list(dict.fromkeys(evidence))
+        if not unique_evidence:
+            return {
+                "source": source,
+                "analysis": "DELIVERY FORECAST: ON TRACK\n\nFORECAST REASON: No documented project risks or delivery impediments found in retrieved evidence.\n\nRISKS:\nNo evidence-based risk identified.",
+                "evidence": []
+            }
 
         evidence_text = "\n\n".join(
-            f"- {item}" for item in risk_evidence
+            f"[Evidence {i+1}]:\n{item}"
+            for i, item in enumerate(unique_evidence)
         )
 
         prompt = f"""
 You are an enterprise project risk analyst.
+Analyze ONLY the project evidence below.
 
-Analyze ONLY the evidence below.
+STRICT RISK EVALUATION RULES:
+1. Identify potential risks ONLY when the evidence explicitly contains a dependency,
+   deadline conflict, schedule constraint, missing input, unresolved issue, or explicit threat.
+2. A deadline by itself is NOT a risk.
+3. A planned milestone is NOT a risk.
+4. A responsibility is NOT a risk.
+5. A dependency is a POTENTIAL RISK only when failure to satisfy it could affect delivery.
+6. For potential risks, describe the impact using cautious language ("could affect", "may delay").
+7. Never state that something IS delayed unless the evidence explicitly says it is delayed.
+8. If the evidence contains no actual delay or blocker, use ON TRACK.
 
-Identify at most 3 potential risks ONLY when the evidence
-contains a dependency, deadline, constraint, missing input,
-unresolved issue, or explicit threat that could affect delivery.
-
-A deadline by itself is NOT a risk.
-A planned milestone is NOT a risk.
-A responsibility is NOT a risk.
-A dependency is not automatically a risk.
-Treat a dependency as a POTENTIAL RISK only when the evidence
-shows that failure to satisfy it could affect a deadline,
-milestone, or delivery activity.
-For a POTENTIAL RISK, describe the impact as a possible
-future consequence using words such as "could affect",
-"may delay", or "could impact".
-Never state that something IS delayed unless the evidence
-explicitly says it is delayed.
-Never describe the dependency as missing, late, or unresolved
-unless the evidence explicitly says so.
-Do not claim something is delayed unless the evidence says it is delayed.
-Do not invent missing credentials, approvals, problems, or delays.
-
-Return ONLY this format:
-
+REQUIRED OUTPUT FORMAT (preserve this exact format):
 DELIVERY FORECAST: ON TRACK / AT RISK / DELAYED
 
-FORECAST REASON: one short sentence based directly on the evidence.
-
-If the evidence contains no actual delay, use ON TRACK unless
-a documented dependency or constraint creates a clear potential
-delivery concern.
-
-Mitigation must be a simple action directly related to the
-documented dependency or constraint. Do not invent resources,
-budgets, escalations, or approvals.Do not imply that the responsible person is currently behind.
+FORECAST REASON: [one short sentence based directly on the evidence]
 
 RISKS:
-1. Risk: ...
-   Reason: ...
-   Impact: ...
-   Mitigation: ...
+1. Risk: [Identified risk title/description]
+   Reason: [Why this is a risk based on the evidence]
+   Impact: [Potential consequence on delivery or quality]
+   Mitigation: [Direct, realistic mitigation step]
 
 2. Risk: ...
    Reason: ...
    Impact: ...
    Mitigation: ...
 
-If no risk is supported, write:
-
+If no risk is supported by the evidence, output:
 RISKS:
 No evidence-based risk identified.
 
-Do not repeat sections.
-Do not add extra sections.
-Keep the response under 250 words.
-
-EVIDENCE:
+==================================================
+PROJECT EVIDENCE:
+==================================================
 {evidence_text}
 """
 
-        response = self.llm.invoke(prompt)
+        try:
+            response = self.llm.invoke(prompt)
+            analysis = response.content.strip()
+        except Exception as e:
+            analysis = f"DELIVERY FORECAST: AT RISK\n\nFORECAST REASON: Temporary error during risk analysis ({e}).\n\nRISKS:\nRefer to project evidence."
 
         return {
             "source": source,
-            "analysis": response.content,
-            "evidence": evidence
+            "analysis": analysis,
+            "evidence": unique_evidence
         }

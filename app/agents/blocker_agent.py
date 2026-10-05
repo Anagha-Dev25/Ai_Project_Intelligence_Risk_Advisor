@@ -1,25 +1,44 @@
+from typing import Dict, Any, Union, List
 from langchain_ollama import ChatOllama
 from app.rag.langchain_rag import LangChainRAG
+from app.config import DEFAULT_LLM_MODEL, LLM_TEMPERATURE, LLM_KEEP_ALIVE
 
 
 class BlockerAgent:
+    """
+    Enterprise AI Agent for identifying blocked tasks, unresolved dependencies,
+    pending architectural/management decisions, and action items from project evidence.
+    """
+
     def __init__(self):
         self.rag = LangChainRAG()
-
         self.llm = ChatOllama(
-            model="qwen2.5:3b",
-            temperature=0,
-            num_predict=250,
-             keep_alive="10m"
+            model=DEFAULT_LLM_MODEL,
+            temperature=LLM_TEMPERATURE,
+            num_predict=600,
+            keep_alive=LLM_KEEP_ALIVE
         )
 
-    def identify_blockers(self, source, top_k=3):
+    def identify_blockers(
+        self,
+        source: Union[str, List[str]],
+        top_k: int = 6
+    ) -> Dict[str, Any]:
+        """
+        Dynamically identify blockers and action items from retrieved project evidence.
 
+        Args:
+            source: Document source name or list of sources.
+            top_k: Number of evidence chunks to retrieve.
+
+        Returns:
+            Dict containing 'source', 'analysis', and 'evidence'.
+        """
         query = (
-            "Find information about blockers, pending decisions, "
-            "unresolved issues, action items, dependencies, "
-            "pending approvals, missing inputs, assigned tasks, "
-            "and responsibilities in this project."
+            "Find information about currently blocked work, "
+            "unresolved issues, missing credentials, missing inputs, "
+            "pending approvals, dependencies preventing progress, action items, "
+            "and responsible team members."
         )
 
         results = self.rag.search(
@@ -28,66 +47,72 @@ class BlockerAgent:
             source=source
         )
 
-        evidence = [
-            document.page_content
-            for document in results
-        ]
+        evidence = [doc.page_content for doc in results]
+        unique_evidence = list(dict.fromkeys(evidence))
+
+        if not unique_evidence:
+            return {
+                "source": source,
+                "analysis": "### BLOCKERS\nNo active blockers identified.\n\n### PENDING DECISIONS\nNo pending decisions identified.\n\n### ACTION ITEMS\nNo evidence-based action items identified.\n\n### RESPONSIBLE PERSONS\nNo assigned responsibilities identified in retrieved evidence.",
+                "evidence": []
+            }
 
         evidence_text = "\n\n".join(
-            f"- {item}" for item in evidence
+            f"[Evidence {i+1}]:\n{item}"
+            for i, item in enumerate(unique_evidence)
         )
 
         prompt = f"""
-You are an Enterprise Project Blocker and Action Item Agent.
+You are an enterprise agile project management and blocker resolution specialist.
+Analyze ONLY the project evidence below to identify active blockers, pending decisions,
+action items, and responsible persons.
 
-Analyze ONLY the evidence retrieved from the project document.
+STRICT FACT-GROUNDING RULES:
+1. BLOCKERS: Only identify an item as a blocker if the evidence EXPLICITLY states that
+   work is blocked, prevented, waiting for something, or currently unable to proceed.
+   Normal ongoing development is NOT a blocker.
+2. PENDING DECISIONS: Only include decisions or approvals explicitly described as pending or awaiting resolution.
+3. ACTION ITEMS: Include explicit next steps, follow-ups, or corrective tasks mentioned in the evidence, with owners and deadlines when available.
+4. RESPONSIBLE PERSONS: List people and their exact documented responsibilities. Never guess or switch roles.
+5. If a section has no evidence, write: "None identified in the provided evidence."
 
-Extract the following:
-
-1. BLOCKERS
-2. PENDING DECISIONS
-3. ACTION ITEMS
-4. RESPONSIBLE PERSON
-
-IMPORTANT RULES:
-
-- Use ONLY information supported by the evidence.
-- Do not invent blockers or unresolved problems.
-- A dependency is not automatically a blocker.
-- A planned task is not automatically an action item.
-- Do not assume that an approval is pending unless the evidence
-  explicitly says it is pending.
-- Preserve names, tasks, and dates exactly when available.
-- Remove duplicate items.
-- If information is not present, write:
-  "Not specified in the document."
-
-For ACTION ITEMS, include the responsible person only when
-the evidence supports the assignment.
-
-Return the result in this format:
-
+REQUIRED OUTPUT FORMAT (preserve these exact headings):
 ### BLOCKERS
-- Item
+- [List each explicit blocker, or "No active blockers identified."]
 
 ### PENDING DECISIONS
-- Decision
+- [List each pending decision or approval, or "None identified."]
 
 ### ACTION ITEMS
-- Action — Responsible person
+- [Action item — Owner (if known) — Deadline (if known)]
 
 ### RESPONSIBLE PERSONS
-- Person — Responsibility
+- [Name / Role — Documented Responsibility]
 
-Retrieved evidence:
-
+==================================================
+PROJECT EVIDENCE:
+==================================================
 {evidence_text}
 """
 
-        response = self.llm.invoke(prompt)
+        try:
+            response = self.llm.invoke(prompt)
+            analysis = response.content.strip()
+        except Exception as e:
+            analysis = f"""### BLOCKERS
+Temporary LLM error during blocker analysis: {e}
+
+### PENDING DECISIONS
+Refer to project evidence.
+
+### ACTION ITEMS
+Refer to project evidence.
+
+### RESPONSIBLE PERSONS
+Refer to project evidence."""
 
         return {
             "source": source,
-            "analysis": response.content,
-            "evidence": evidence
+            "analysis": analysis,
+            "evidence": unique_evidence
         }
